@@ -1,0 +1,111 @@
+#!/usr/bin/env php
+<?php
+
+ini_set('memory_limit', '-1');
+
+$file = $argv[1];
+
+$handle = fopen($file, 'r');
+
+// if the file can't be opened
+if ($handle === false) {
+    echo "Unable to open $filename \n\n";
+    exit;
+}
+
+// Loop till we find TRACE START
+while ($l = fgets($handle)) {
+    if (strpos($l, "TRACE START") === 0) {
+        break;
+    }
+}
+
+// determine when we're at the end of the file
+function isEOTrace(string $l) {
+    $pattern = "/^(\\t|TRACE END)/";
+    return preg_match($pattern, $l);
+}
+
+// local variables
+$frames = [];
+$stack = [];
+$line_number = 0;
+
+// loop over the profile
+while ($l = fgets($handle)) {
+    echo "Parsing line number ".$line_number++."\r";
+
+    if (isEOTrace($l)) {
+        break;
+    }
+
+    $parts = explode("\t", $l);
+    list($level, $fn_no, $is_exit, $time) = $parts;
+    $time = (float)$time;
+
+    if ($is_exit) {
+        $leaving_func_name = array_pop($stack);
+        $frame_index = array_search($leaving_func_name, $frames);
+        if ($frame_index !== false) {
+            $events[] = [
+                'type' => 'C',
+                'frame' => $frame_index,
+                'at' => $time,
+            ];
+        }
+    }
+    else {
+        $func_name = $parts[5];
+
+        if (array_search($func_name, $frames) === false) {
+            $frames[] = $func_name;
+        }
+
+        $events[] = [
+            'type' => 'O',
+            'frame' => array_search($func_name, $frames),
+            'at' => $time,
+        ];
+        $stack[] = $func_name;
+    }
+}
+echo "\n";
+fclose($handle);
+
+while($leaving_func_name = array_pop($stack)) {
+    $frame_index = array_search($leaving_func_name, $frames);
+    if ($frame_index !== false) {
+        $events[] = [
+            'type' => 'C',
+            'frame' => $frame_index,
+            'at' => $time,
+        ];
+    }
+}
+
+// print output
+$contents = json_encode([
+    'version' => '0.0.1',
+    '$schema' => 'https://www.speedscope.app/file-format-schema.json',
+    'shared' => [
+        'frames' => array_map(function ($frame) {
+            return [
+                'key' => $frame,
+                'name' => $frame
+            ];
+        }, $frames),
+    ],
+    'profiles' => [
+        [
+            'type' => 'evented',
+            'name' => 'foo.txt',
+            'unit' => 'seconds',
+            'startValue' => $events[0]['at'],
+            'endValue' => $events[count($events)-1]['at'],
+            'events' => $events
+        ]
+    ]
+]);
+$handle = fopen($argv[2], 'w+');
+fwrite($handle, $contents);
+fclose($handle);

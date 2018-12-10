@@ -1,0 +1,13 @@
+{
+    "name": "markhuot/speedscope-xdebug",
+    "authors": [
+        {
+            "name": "Mark Huot",
+            "email": "mark@markhuot.com"
+        }
+    ],
+    "bin": [
+      "convert-xdebug-to-speedscope"
+    ],
+    "require": {}
+}
